@@ -14,40 +14,88 @@
  * limitations under the License.
  */
 
-import { Configuration } from "@atomist/automation-client";
 import {
-    ConfigureOptions,
-    configureSdm,
-} from "@atomist/sdm-core";
-import { machine } from "./lib/machine/machine";
+    actionableButton,
+    CommandHandlerRegistration,
+    GeneratorRegistration,
+    ParametersDefinition,
+} from "@atomist/sdm";
+import { configure } from "@atomist/sdm-core";
+import { toArray } from "@atomist/sdm-core/lib/util/misc/array";
+import {
+    Attachment,
+    SlackMessage,
+} from "@atomist/slack-messages";
+import {
+    BuiltInGeneratorRegistrations,
+    GeneratorInfo,
+} from "./lib/generatorRegistrations";
 
-const machineOptions: ConfigureOptions = {
-    /**
-     * When your SDM requires configuration that is unique to it,
-     * you can list it here.
-     */
-    requiredConfigurationValues: [
-    ],
+interface SearchParameters {
+    tags: string;
+}
+
+const SearchParametersDefinition: ParametersDefinition<SearchParameters> = {
+    tags: { required: true, description: "Search tags" },
 };
 
-/**
- * The starting point for building an SDM is here!
- */
-export const configuration: Configuration = {
-    /**
-     * To run in team mode, you'll need an Atomist workspace.
-     * To run in local mode, you don't. This will be ignored.
-     * See: https://docs.atomist.com/developer/architecture/#connect-your-sdm
-     */
-    workspaceIds: ["connect this SDM to your whole team with the Atomist service"],
-    postProcessors: [
-        /**
-         * This is important setup! This defines the function that will be called
-         * to configure your SDM with everything that you want it to do.
-         *
-         * Click into the first argument (the "machine" function) to personalize
-         * your SDM.
-         */
-        configureSdm(machine, machineOptions),
-    ],
-};
+function generateSlackMessage(generators: Array<GeneratorRegistration<any> & GeneratorInfo>): SlackMessage {
+    const slackify = require("slackify-markdown");
+    if (generators.length > 0) {
+        return {
+            text: "The following generators are available",
+            attachments: generators.map<Attachment>(reg => {
+                const fallback = `${BuiltInGeneratorRegistrations.map(r =>
+                    `* **${r.name}**  \nCommand: \`${r.intent}\`  \n${r.description}`).join("\n")
+                    }`;
+                return {
+                    title: reg.name,
+                    // tslint:disable-next-line:max-line-length
+                    text: slackify(`Command: \`${reg.intent}\`  \n${reg.stackInfo}  \nTags: ${toArray(reg.tags).map(tag => `\`${tag}\``).join(", ")}`),
+                    fallback: slackify(fallback),
+                    actions: [actionableButton({text: "Generate this project"}, reg)],
+                };
+            }),
+        };
+    } else {
+        return {
+            text: slackify("Sorry, we don't have any generators yet for this combination of technologies.\n" +
+                "Feel free to ask us on Twitter [@atomist](https://twitter.com/atomist) to provide one. " +
+                "You can also make your own and let us know! We'll incorporate it in our list. "),
+        };
+    }
+}
+
+export const configuration = configure(async sdm => {
+    BuiltInGeneratorRegistrations.forEach(reg => sdm.addGeneratorCommand(reg));
+
+    const ListGenerators: CommandHandlerRegistration = {
+        name: "list-generators",
+        intent: "list generators",
+        autoSubmit: true,
+        listener: async ci => {
+            const slackMessage = generateSlackMessage(BuiltInGeneratorRegistrations);
+            ci.addressChannels(slackMessage);
+        },
+    };
+
+    const SearchGenerators: CommandHandlerRegistration<SearchParameters> = {
+        name: "search-generators",
+        intent: "search generators",
+        parameters: SearchParametersDefinition,
+        autoSubmit: true,
+        listener: async ci => {
+            const filteredRegistrations = BuiltInGeneratorRegistrations.filter(reg => {
+                const tags = ci.parameters.tags.split(/[, ]/).filter(tag => !!tag && tag.length > 0);
+                return tags.every(val => toArray(reg.tags).includes(val));
+            });
+            const slackMessage = generateSlackMessage(filteredRegistrations);
+            ci.addressChannels(slackMessage);
+        },
+    };
+
+    sdm.addCommand(ListGenerators);
+    sdm.addCommand(SearchGenerators);
+}, {
+    name: "generator-sdm",
+});
