@@ -5,6 +5,7 @@ import {
     inferStructureAndMovePackageTransform,
     ReplaceReadmeTitle,
     SpringProjectCreationParameterDefinitions,
+    updateMultiModulePomTransform,
     updatePomTransform,
 } from "@atomist/sdm-pack-spring";
 import { JavaProjectCreationParameterDefinitions } from "@atomist/sdm-pack-spring/lib/java/generate/JavaProjectCreationParameters";
@@ -36,6 +37,20 @@ export const BuiltInGeneratorRegistrations: Array<GeneratorRegistration<any> & G
         startingPoint: GitHubRepoRef.from({ owner: "atomist-seeds", repo: "spring-rest", branch: "master" }),
         transform: [
             updatePomTransform,
+            inferStructureAndMovePackageTransform,
+            inferSpringStructureAndRenameTransform,
+        ],
+        tags: ["spring", "boot", "mvc", "spring-mvc", "rest", "maven"],
+        stackInfo: "Language: Java  \nTechnologies used: Spring MVC",
+    },
+    {
+        name: "Spring Boot Clean Architecture (Java)",
+        description: "Spring Boot Clean Architecture example",
+        intent: "generate spring-boot-clean-architecture",
+        parameters: SpringProjectCreationParameterDefinitions,
+        startingPoint: GitHubRepoRef.from({ owner: "sourced-bvba", repo: "clean-architecture-seed", branch: "master" }),
+        transform: [
+            updateMultiModulePomTransform("clean-architecture-seed"),
             inferStructureAndMovePackageTransform,
             inferSpringStructureAndRenameTransform,
         ],
